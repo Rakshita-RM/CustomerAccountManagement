@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CAM_WEB1.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260130072144_Initial")]
-    partial class Initial
+    [Migration("20260130175740_FinalAccountFix")]
+    partial class FinalAccountFix
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -40,6 +40,11 @@ namespace CAM_WEB1.Migrations
                     b.Property<decimal>("Balance")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("Branch")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("datetime2");
 
@@ -53,15 +58,13 @@ namespace CAM_WEB1.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.HasKey("AccountID");
+
+                    b.HasIndex("Status", "CreatedDate");
 
                     b.ToTable("t_Account", (string)null);
                 });
@@ -97,6 +100,55 @@ namespace CAM_WEB1.Migrations
                     b.ToTable("t_Approval", (string)null);
                 });
 
+            modelBuilder.Entity("CAM_WEB1.Models.Report", b =>
+                {
+                    b.Property<long>("ReportId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("ReportId"));
+
+                    b.Property<DateTime>("GeneratedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Metrics")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.HasKey("ReportId");
+
+                    b.ToTable("t_Report", (string)null);
+                });
+
+            modelBuilder.Entity("CAM_WEB1.Models.ReportAudit", b =>
+                {
+                    b.Property<int>("AuditID")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("AuditID"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("ActionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long>("ReportId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("AuditID");
+
+                    b.ToTable("t_Report_Audit", (string)null);
+                });
+
             modelBuilder.Entity("CAM_WEB1.Models.Transaction", b =>
                 {
                     b.Property<int>("TransactionID")
@@ -116,13 +168,17 @@ namespace CAM_WEB1.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("TransactionID");
+
+                    b.HasIndex("AccountID");
+
+                    b.HasIndex("Date", "Status");
 
                     b.ToTable("t_Transaction", (string)null);
                 });
