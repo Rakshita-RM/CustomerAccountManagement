@@ -1,0 +1,14 @@
+﻿-- CREATE TABLES FOR REPORTING MODULE
+CREATE TABLE t_Report (
+    reportId INT PRIMARY KEY IDENTITY(1,1),
+    scope NVARCHAR(255),
+    metrics NVARCHAR(MAX),
+    generatedDate DATETIME DEFAULT GETDATE()
+);
+
+CREATE TABLE t_Report_Audit (
+    auditId INT PRIMARY KEY IDENTITY(1,1),
+    reportId INT,
+    actionTaken NVARCHAR(100),
+    logDate DATETIME DEFAULT GETDATE()
+);

@@ -3,14 +3,17 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace CAM_WEB1.Models
 {
-	[Table("t_Accounts")] // Coding Standard: t_ prefix for tables
-	public class Account
+	//[Table("t_Accounts")] // Coding Standard: t_ prefix for tables
+    [Table("t_Account")] // Coding Standard: t_ prefix for tables
+    public class Account
 	{
 		[Key]
 		[DatabaseGenerated(DatabaseGeneratedOption.Identity)]
 		public int AccountID { get; set; } // [cite: 46]
 
-		[Required]
+        public string Branch { get; set; } = "Main Branch";
+
+        [Required]
 		[StringLength(100)]
 		public string CustomerName { get; set; } = string.Empty; // [cite: 48]
 
@@ -29,7 +32,7 @@ namespace CAM_WEB1.Models
 
 		public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 
-		[Required]
-		public string Role { get; set; } = "BankOfficer";
+		//[Required]
+		//public string Role { get; set; } = "BankOfficer";
 	}
 }
