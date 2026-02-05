@@ -1,6 +1,7 @@
 ﻿using CAM_WEB1.Data;
 using CAM_WEB1.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace CAM_WEB1.Controllers
@@ -25,49 +26,61 @@ namespace CAM_WEB1.Controllers
             if (transaction == null) return BadRequest("Invalid payload.");
             if (transaction.Amount <= 0) return BadRequest("Amount must be greater than zero.");
 
-            var account = await _context.Accounts.FindAsync(transaction.AccountID);
-            if (account == null) return NotFound($"Account {transaction.AccountID} not found.");
-
-            // Normalize type & status to your expected values
+            // Normalize type & status
             var type = (transaction.Type ?? string.Empty).Trim();
             var status = (transaction.Status ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(type)) return BadRequest("Type is required.");
-            if (string.IsNullOrWhiteSpace(status)) transaction.Status = "Completed"; // default like your model
+            if (string.IsNullOrWhiteSpace(status)) transaction.Status = "Completed";
 
-            // Only allow the three types mentioned in your code comment
             var allowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { "Deposit", "Withdrawal", "Transfer" };
+    { "Deposit", "Withdrawal", "Transfer" };
             if (!allowedTypes.Contains(type))
                 return BadRequest("Type must be one of: Deposit, Withdrawal, Transfer.");
 
-            // If not set by client, keep UTC now
             if (transaction.Date == default) transaction.Date = DateTime.UtcNow;
 
-            // Apply balance effect for Deposit/Withdrawal immediately
-            if (type.Equals("Deposit", StringComparison.OrdinalIgnoreCase))
+            // Prepare parameters that match the stored procedure signature exactly.
+            var newIdParam = new SqlParameter("@NewTransactionID", System.Data.SqlDbType.Int)
             {
-                account.Balance += transaction.Amount;
-            }
-            else if (type.Equals("Withdrawal", StringComparison.OrdinalIgnoreCase))
+                Direction = System.Data.ParameterDirection.Output
+            };
+
+            var parameters = new[]
             {
-                if (account.Balance < transaction.Amount)
-                    return BadRequest("Insufficient balance.");
+        new SqlParameter("@AccountID", System.Data.SqlDbType.Int) { Value = transaction.AccountID },
+        new SqlParameter("@Type", System.Data.SqlDbType.NVarChar, 20) { Value = type },
+        new SqlParameter("@Amount", System.Data.SqlDbType.Decimal) { Precision = 18, Scale = 2, Value = transaction.Amount },
+        new SqlParameter("@Date", System.Data.SqlDbType.DateTime2) { Value = transaction.Date },
+        new SqlParameter("@Status", System.Data.SqlDbType.NVarChar, 50) { Value = transaction.Status },
+        newIdParam
+    };
 
-                account.Balance -= transaction.Amount;
-            }
-            else if (type.Equals("Transfer", StringComparison.OrdinalIgnoreCase))
+            try
             {
-                // Without a source+destination model, a single-row "Transfer" would break balances.
-                // We only log it (no balance change). Implement a dedicated transfer endpoint later.
-                // If you prefer to reject instead, uncomment the next line:
-                // return BadRequest("Use a dedicated transfer endpoint that accepts source and destination AccountIDs.");
+                // Use positional call matching the stored-proc parameter order,
+                // including the OUTPUT parameter at the end.
+                var sql = "EXEC dbo.SP_CreateTransaction @AccountID, @Type, @Amount, @Date, @Status, @NewTransactionID OUTPUT";
+                await _context.Database.ExecuteSqlRawAsync(sql, parameters);
+
+                var createdId = (int)(newIdParam.Value ?? 0);
+                if (createdId == 0) return BadRequest("Failed to create transaction.");
+
+                // Retrieve the created transaction via SELECT stored proc
+                var createdList = await _context.Transactions
+                    .FromSqlRaw("EXEC dbo.SP_GetTransactionById @TransactionID", new SqlParameter("@TransactionID", createdId))
+                    .AsNoTracking()
+                    .ToListAsync();
+
+                var created = createdList.FirstOrDefault();
+                if (created == null) return StatusCode(500, "Transaction created but could not be retrieved.");
+
+                return CreatedAtAction(nameof(GetTransactionById), new { id = created.TransactionID }, created);
             }
-
-            // Persist
-            _context.Transactions.Add(transaction);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetTransactionById), new { id = transaction.TransactionID }, transaction);
+            catch (SqlException ex)
+            {
+                // Surface useful DB errors to client (e.g. insufficient funds, account not found)
+                return BadRequest(new { error = ex.Message });
+            }
         }
 
         // GET: api/transactions
@@ -77,28 +90,24 @@ namespace CAM_WEB1.Controllers
             [FromQuery] int? accountId,
             [FromQuery] string? type,
             [FromQuery] string? status,
-            [FromQuery(Name = "from")] DateTime? dateFrom,
-            [FromQuery(Name = "to")] DateTime? dateTo)
+            [FromQuery] DateTime? dateFrom,
+            [FromQuery] DateTime? dateTo)
         {
-            var q = _context.Transactions.AsQueryable();
+            var parameters = new[]
+     {
+        new SqlParameter("@AccountId", System.Data.SqlDbType.Int) { Value = accountId ?? (object)DBNull.Value },
+        new SqlParameter("@Type", System.Data.SqlDbType.NVarChar, 20) { Value = string.IsNullOrWhiteSpace(type) ? (object)DBNull.Value : type! },
+        new SqlParameter("@Status", System.Data.SqlDbType.NVarChar, 50) { Value = string.IsNullOrWhiteSpace(status) ? (object)DBNull.Value : status! },
+        new SqlParameter("@DateFrom", System.Data.SqlDbType.DateTime2) { Value = dateFrom ?? (object)DBNull.Value },
+        new SqlParameter("@DateTo", System.Data.SqlDbType.DateTime2) { Value = dateTo ?? (object)DBNull.Value }
+    };
 
-            if (accountId.HasValue)
-                q = q.Where(t => t.AccountID == accountId.Value);
+            var transactions = await _context.Transactions
+                .FromSqlRaw("EXEC dbo.SP_GetTransactions @AccountId, @Type, @Status, @DateFrom, @DateTo", parameters)
+                .AsNoTracking()
+                .ToListAsync();
 
-            if (!string.IsNullOrWhiteSpace(type))
-                q = q.Where(t => t.Type == type);
-
-            if (!string.IsNullOrWhiteSpace(status))
-                q = q.Where(t => t.Status == status);
-
-            if (dateFrom.HasValue)
-                q = q.Where(t => t.Date >= dateFrom.Value);
-
-            if (dateTo.HasValue)
-                q = q.Where(t => t.Date <= dateTo.Value);
-
-            var items = await q.OrderByDescending(t => t.Date).ToListAsync();
-            return Ok(items);
+            return Ok(transactions);
         }
 
         // GET: api/transactions/{id}
@@ -115,16 +124,14 @@ namespace CAM_WEB1.Controllers
         [HttpPatch("{id:int}/status")]
         public async Task<IActionResult> ChangeTransactionStatus(int id, [FromBody] string newStatus)
         {
-            if (string.IsNullOrWhiteSpace(newStatus))
-                return BadRequest("New status is required.");
+            await _context.Database.ExecuteSqlRawAsync(
+    "EXEC dbo.SP_UpdateTransactionStatus @Id, @Status",
+    new SqlParameter("@Id", id),
+    new SqlParameter("@Status", newStatus)
+);
 
-            var txn = await _context.Transactions.FindAsync(id);
-            if (txn == null) return NotFound();
+            return Ok(new { message = "Transaction status updated" });
 
-            txn.Status = newStatus.Trim();
-            await _context.SaveChangesAsync();
-
-            return Ok(new { Message = $"Transaction status updated to {txn.Status}" });
         }
 
         // DELETE: api/transactions/{id}
@@ -133,13 +140,13 @@ namespace CAM_WEB1.Controllers
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> DeleteTransaction(int id)
         {
-            var txn = await _context.Transactions.FindAsync(id);
-            if (txn == null) return NotFound();
-
-            _context.Transactions.Remove(txn);
-            await _context.SaveChangesAsync();
+            await _context.Database.ExecuteSqlRawAsync(
+     "EXEC dbo.SP_DeleteTransaction @Id",
+     new SqlParameter("@Id", id)
+ );
 
             return NoContent();
+
         }
     }
 }

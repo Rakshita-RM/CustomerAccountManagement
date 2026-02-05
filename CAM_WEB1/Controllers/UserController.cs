@@ -1,148 +1,265 @@
-﻿using CAM_WEB1.Data;
-using CAM_WEB1.Models;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
+
 using Microsoft.EntityFrameworkCore;
 
+using Microsoft.Data.SqlClient;
+
+using CAM_WEB1.Data;
+
+using CAM_WEB1.Models;
+
 namespace CAM_WEB1.Controllers
+
 {
+
     [Route("api/[controller]")]
+
     [ApiController]
+
     public class UsersController : ControllerBase
+
     {
+
         private readonly ApplicationDbContext _context;
 
-        private static readonly HashSet<string> AllowedRoles =
-            new(StringComparer.OrdinalIgnoreCase) { "Officer", "Manager", "Admin" };
-
-        private static readonly HashSet<string> AllowedStatus =
-            new(StringComparer.OrdinalIgnoreCase) { "Active", "Inactive" };
-
         public UsersController(ApplicationDbContext context)
+
         {
+
             _context = context;
+
         }
 
-        // POST: api/users
+        // ============================
+
+        // CREATE USER
+
+        // POST: api/Users
+
+        // ============================
+
         [HttpPost]
-        public async Task<ActionResult<User>> CreateUser([FromBody] User user)
+
+        public async Task<IActionResult> CreateUser([FromBody] CreateUserDto dto)
+
         {
-            if (user == null) return BadRequest("Invalid payload.");
 
-            // Normalize & validate
-            user.Role = string.IsNullOrWhiteSpace(user.Role) ? "Officer" : user.Role.Trim();
-            user.Status = string.IsNullOrWhiteSpace(user.Status) ? "Active" : user.Status.Trim();
+            await _context.Database.ExecuteSqlRawAsync(
 
-            if (!AllowedRoles.Contains(user.Role))
-                return BadRequest("Role must be one of: Officer, Manager, Admin.");
-            if (!AllowedStatus.Contains(user.Status))
-                return BadRequest("Status must be one of: Active, Inactive.");
+                "EXEC dbo.sp_User_Create @Name, @Email, @Role, @Branch",
 
-            // Optional: prevent duplicate emails
-            var emailExists = await _context.Users.AnyAsync(u => u.Email == user.Email);
-            if (emailExists) return Conflict("A user with the same email already exists.");
+                new SqlParameter("@Name", dto.Name),
 
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync();
+                new SqlParameter("@Email", dto.Email),
 
-            return CreatedAtAction(nameof(GetUserById), new { id = user.UserID }, user);
+                new SqlParameter("@Role", dto.Role),
+
+                new SqlParameter("@Branch", dto.Branch ?? (object)DBNull.Value)
+
+            );
+
+            return Ok(new { message = "User created successfully" });
+
         }
 
-        // GET: api/users
-        // Filters: role, status, branch
+        // ============================
+
+        // GET USERS (FILTER)
+
+        // GET: api/Users?role=&branch=&status=
+
+        // ============================
+
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<User>>> GetUsers(
+
+        public async Task<IActionResult> GetUsers(
+
             [FromQuery] string? role,
-            [FromQuery] string? status,
-            [FromQuery] string? branch)
+
+            [FromQuery] string? branch,
+
+            [FromQuery] string? status)
+
         {
-            var q = _context.Users.AsQueryable();
 
-            if (!string.IsNullOrWhiteSpace(role))
-                q = q.Where(u => u.Role == role);
+            var users = await _context.Users
 
-            if (!string.IsNullOrWhiteSpace(status))
-                q = q.Where(u => u.Status == status);
+                .FromSqlRaw(
 
-            if (!string.IsNullOrWhiteSpace(branch))
-                q = q.Where(u => u.Branch == branch);
+                    "EXEC dbo.sp_User_GetAll @Role, @Branch, @Status",
 
-            var items = await q.OrderBy(u => u.Name).ToListAsync();
-            return Ok(items);
+                    new SqlParameter("@Role", (object?)role ?? DBNull.Value),
+
+                    new SqlParameter("@Branch", (object?)branch ?? DBNull.Value),
+
+                    new SqlParameter("@Status", (object?)status ?? DBNull.Value)
+
+                )
+
+                .ToListAsync();
+
+            return Ok(users);
+
         }
 
-        // GET: api/users/{id}
-        [HttpGet("{id:int}")]
-        public async Task<ActionResult<User>> GetUserById(int id)
+        // ============================
+
+        // GET USER BY ID  ✅ FIXED
+
+        // GET: api/Users/5
+
+        // ============================
+
+        [HttpGet("{id}")]
+
+        public async Task<IActionResult> GetUserById(int id)
+
         {
-            var user = await _context.Users.FindAsync(id);
-            if (user == null) return NotFound();
-            return user;
+
+            var result = await _context.Users
+
+                .FromSqlRaw(
+
+                    "EXEC dbo.sp_User_GetById @UserID",
+
+                    new SqlParameter("@UserID", id)
+
+                )
+
+                .ToListAsync();   // ✅ IMPORTANT
+
+            var user = result.FirstOrDefault();
+
+            if (user == null)
+
+                return NotFound(new { message = "User not found" });
+
+            return Ok(user);
+
         }
 
-        // PUT: api/users/{id}
-        [HttpPut("{id:int}")]
+        // ============================
+
+        // UPDATE USER
+
+        // PUT: api/Users/5
+
+        // ============================
+
+        [HttpPut("{id}")]
+
         public async Task<IActionResult> UpdateUser(int id, [FromBody] User user)
+
         {
-            if (id != user.UserID) return BadRequest("ID mismatch.");
 
-            // Validate fields
-            if (!string.IsNullOrWhiteSpace(user.Role) && !AllowedRoles.Contains(user.Role))
-                return BadRequest("Role must be one of: Officer, Manager, Admin.");
+            if (id != user.UserID)
 
-            if (!string.IsNullOrWhiteSpace(user.Status) && !AllowedStatus.Contains(user.Status))
-                return BadRequest("Status must be one of: Active, Inactive.");
+                return BadRequest(new { message = "ID mismatch" });
 
-            // Enforce unique email (excluding this user)
-            var emailExists = await _context.Users
-                .AnyAsync(u => u.Email == user.Email && u.UserID != id);
-            if (emailExists) return Conflict("A user with the same email already exists.");
+            await _context.Database.ExecuteSqlRawAsync(
 
-            _context.Entry(user).State = EntityState.Modified;
+                "EXEC dbo.sp_User_Update @UserID, @Name, @Email, @Role, @Branch, @Status",
 
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                var exists = await _context.Users.AnyAsync(u => u.UserID == id);
-                if (!exists) return NotFound();
-                throw;
-            }
+                new SqlParameter("@UserID", id),
 
-            return NoContent();
+                new SqlParameter("@Name", user.Name),
+
+                new SqlParameter("@Email", user.Email),
+
+                new SqlParameter("@Role", user.Role),
+
+                new SqlParameter("@Branch", user.Branch ?? (object)DBNull.Value),
+
+                new SqlParameter("@Status", user.Status)
+
+            );
+
+            return Ok(new { message = "User updated successfully" });
+
         }
 
-        // PATCH: api/users/{id}/status
-        [HttpPatch("{id:int}/status")]
-        public async Task<IActionResult> ChangeStatus(int id, [FromBody] string newStatus)
+        // ============================
+
+        // UPDATE STATUS ONLY
+
+        // PATCH: api/Users/5/status
+
+        // ============================
+
+        [HttpPatch("{id}/status")]
+
+        public async Task<IActionResult> UpdateUserStatus(int id, [FromBody] UserStatusDto dto)
+
         {
-            if (string.IsNullOrWhiteSpace(newStatus))
-                return BadRequest("New status is required.");
 
-            var status = newStatus.Trim();
-            if (!AllowedStatus.Contains(status))
-                return BadRequest("Status must be one of: Active, Inactive.");
+            await _context.Database.ExecuteSqlRawAsync(
 
-            var user = await _context.Users.FindAsync(id);
-            if (user == null) return NotFound();
+                "EXEC dbo.sp_User_UpdateStatus @UserID, @Status",
 
-            user.Status = status;
-            await _context.SaveChangesAsync();
+                new SqlParameter("@UserID", id),
 
-            return Ok(new { Message = $"User status updated to {status}" });
+                new SqlParameter("@Status", dto.Status)
+
+            );
+
+            return Ok(new { message = "User status updated successfully" });
+
         }
 
-        // DELETE: api/users/{id}
-        [HttpDelete("{id:int}")]
+        // ============================
+
+        // DELETE USER
+
+        // DELETE: api/Users/5
+
+        // ============================
+
+        [HttpDelete("{id}")]
+
         public async Task<IActionResult> DeleteUser(int id)
-        {
-            var user = await _context.Users.FindAsync(id);
-            if (user == null) return NotFound();
 
-            _context.Users.Remove(user);
-            await _context.SaveChangesAsync();
-            return NoContent();
+        {
+
+            await _context.Database.ExecuteSqlRawAsync(
+
+                "EXEC dbo.sp_User_Delete @UserID",
+
+                new SqlParameter("@UserID", id)
+
+            );
+
+            return Ok(new { message = "User deleted successfully" });
+
         }
+
     }
+
+    // ============================
+
+    // DTOs
+
+    // ============================
+
+    public class CreateUserDto
+
+    {
+
+        public string Name { get; set; }
+
+        public string Email { get; set; }
+
+        public string Role { get; set; }
+
+        public string? Branch { get; set; }
+
+    }
+
+    public class UserStatusDto
+
+    {
+
+        public string Status { get; set; } // Active / Inactive
+
+    }
+
 }
