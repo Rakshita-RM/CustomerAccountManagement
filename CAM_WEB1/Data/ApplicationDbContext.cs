@@ -1,4 +1,5 @@
 ﻿using CAM_WEB1.Models;
+using CAM_WEB1.Model;
 using Microsoft.EntityFrameworkCore;
 
 namespace CAM_WEB1.Data

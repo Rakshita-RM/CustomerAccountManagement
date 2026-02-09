@@ -1,99 +1,181 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Data.SqlClient; 
-using CAM_WEB1.Data;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
+using System.Data;
+using System.Security.Claims;
 using CAM_WEB1.Models;
 
 namespace CAM_WEB1.Controllers
 {
-	[Route("api/[controller]")]
 	[ApiController]
+	[Route("api/v1/[controller]")]
 	public class AccountsController : ControllerBase
 	{
-		private readonly ApplicationDbContext _context;
+		private readonly string _conn;
 
-		public AccountsController(ApplicationDbContext context)
+		public AccountsController(IConfiguration configuration)
 		{
-			_context = context;
+			_conn = configuration.GetConnectionString("DefaultConnection") ?? "";
 		}
 
-		// CREATE: api/Accounts
-		[HttpPost]
-		public async Task<ActionResult<Account>> CreateAccount([FromBody] Account account)
+		// ==========================================
+		// 1. CREATE ACCOUNT 
+		// ==========================================
+		[HttpPost("create")]
+		[Authorize(Roles = "Officer")]
+		public IActionResult CreateAccount(Account account)
 		{
-			var parameters = new[] {
-				new SqlParameter("@Action", "Create"),
-				new SqlParameter("@Branch", account.Branch ?? (object)DBNull.Value),
-				new SqlParameter("@CustomerName", account.CustomerName),
-				new SqlParameter("@CustomerID", account.CustomerID),
-				new SqlParameter("@AccountType", account.AccountType),
-				new SqlParameter("@Balance", account.Balance),
-				new SqlParameter("@Status", account.Status),
-				new SqlParameter("@CreatedDate", account.CreatedDate == default ? DateTime.UtcNow : account.CreatedDate)
-			};
+			using var con = new SqlConnection(_conn);
+			using var cmd = new SqlCommand("usp_Account", con);
+			cmd.CommandType = CommandType.StoredProcedure;
 
-			// Executes sp_Account and returns the newly created record
-			var result = await _context.Accounts
-				.FromSqlRaw("EXEC dbo.usp_Account @Action, NULL, @Branch, @CustomerName, @CustomerID, @AccountType, @Balance, @Status, @CreatedDate", parameters)
-				.ToListAsync();
+			cmd.Parameters.AddWithValue("@Action", "Create");
+			cmd.Parameters.AddWithValue("@Branch", account.Branch);
+			cmd.Parameters.AddWithValue("@CustomerName", account.CustomerName);
+			cmd.Parameters.AddWithValue("@CustomerID", account.CustomerID);
+			cmd.Parameters.AddWithValue("@AccountType", account.AccountType);
+			cmd.Parameters.AddWithValue("@Balance", account.Balance);
+			cmd.Parameters.AddWithValue("@Status", "Active");
+			cmd.Parameters.AddWithValue("@CreatedDate", DateTime.UtcNow);
 
-			var newAccount = result.FirstOrDefault();
-			return CreatedAtAction(nameof(GetAccountById), new { id = newAccount?.AccountID }, newAccount);
+			con.Open();
+			cmd.ExecuteNonQuery();
+
+			Audit(GetUserID(), "CREATE_ACCOUNT", null, $"CustID: {account.CustomerID}");
+
+			return Ok(new { message = "Account successfully created by Officer" });
 		}
 
-		// GET ALL: api/Accounts
-		[HttpGet]
-		public async Task<ActionResult<IEnumerable<Account>>> GetAllAccounts()
+		// ==========================================
+		// 2. UPDATE ACCOUNT 
+		// ==========================================
+		[HttpPut("update/{id}")]
+		[Authorize(Roles = "Officer")]
+		public IActionResult UpdateAccount(int id, Account account)
 		{
-			return await _context.Accounts
-				.FromSqlRaw("EXEC dbo.usp_Account @Action = 'GetAll'")
-				.ToListAsync();
+			using var con = new SqlConnection(_conn);
+			using var cmd = new SqlCommand("usp_Account", con);
+			cmd.CommandType = CommandType.StoredProcedure;
+
+			cmd.Parameters.AddWithValue("@Action", "Update");
+			cmd.Parameters.AddWithValue("@AccountID", id);
+			cmd.Parameters.AddWithValue("@Branch", account.Branch);
+			cmd.Parameters.AddWithValue("@CustomerName", account.CustomerName);
+			cmd.Parameters.AddWithValue("@AccountType", account.AccountType);
+			cmd.Parameters.AddWithValue("@Status", account.Status);
+
+			con.Open();
+			int rows = cmd.ExecuteNonQuery();
+
+			if (rows == 0) return NotFound("Account not found");
+
+			Audit(GetUserID(), "UPDATE_ACCOUNT", $"AccID: {id}", $"NewStatus: {account.Status}");
+
+			return Ok(new { message = "Account details updated successfully" });
 		}
 
-		// GET BY ID: api/Accounts/5
-		[HttpGet("{id}")]
-		public async Task<ActionResult<Account>> GetAccountById(int id)
+		// ==========================================
+		// 5. CLOSE ACCOUNT
+		// ==========================================
+		[HttpPut("close/{id}")]
+		[Authorize(Roles = "Officer")]
+		public IActionResult CloseAccount(int id)
 		{
-			// Ensure you are calling the 'GetById' action defined in your SP
-			var result = await _context.Accounts
-				.FromSqlRaw("EXEC dbo.usp_Account @Action = 'GetById', @AccountID = {0}", id)
-				.ToListAsync();
+			using var con = new SqlConnection(_conn);
+			using var cmd = new SqlCommand("usp_Account", con);
+			cmd.CommandType = CommandType.StoredProcedure;
 
-			var account = result.FirstOrDefault();
-			if (account == null) return NotFound();
-			return account;
+			cmd.Parameters.AddWithValue("@Action", "Close");
+			cmd.Parameters.AddWithValue("@AccountID", id);
+
+			con.Open();
+			cmd.ExecuteNonQuery();
+
+			Audit(GetUserID(), "CLOSE_ACCOUNT", "Active", $"AccID: {id} Closed");
+
+			return Ok(new { message = "Account status updated to Closed" });
 		}
 
-		// UPDATE: api/Accounts/5
-		[HttpPut("{id}")]
-		public async Task<IActionResult> UpdateAccount(int id, [FromBody] Account account)
+		// ==========================================
+		// 3. GET ACCOUNT DETAIL (Existing)
+		// ==========================================
+		[HttpGet("details/{id}")]
+		[Authorize(Roles = "Officer,Manager,Admin")]
+		public IActionResult GetAccountDetail(int id)
 		{
-			if (id != account.AccountID) return BadRequest("ID Mismatch");
+			using var con = new SqlConnection(_conn);
+			using var cmd = new SqlCommand("usp_Account", con);
+			cmd.CommandType = CommandType.StoredProcedure;
 
-			var parameters = new[] {
-				new SqlParameter("@Action", "Update"),
-				new SqlParameter("@AccountID", id),
-				new SqlParameter("@Branch", account.Branch),
-				new SqlParameter("@CustomerName", account.CustomerName),
-				new SqlParameter("@CustomerID", account.CustomerID),
-				new SqlParameter("@AccountType", account.AccountType),
-				new SqlParameter("@Balance", account.Balance),
-				new SqlParameter("@Status", account.Status)
-			};
+			cmd.Parameters.AddWithValue("@Action", "GetById");
+			cmd.Parameters.AddWithValue("@AccountID", id);
 
-			await _context.Database.ExecuteSqlRawAsync(
-				"EXEC dbo.usp_Account @Action, @AccountID, @Branch, @CustomerName, @CustomerID, @AccountType, @Balance, @Status",
-				parameters);
+			con.Open();
+			DataTable dt = new();
+			dt.Load(cmd.ExecuteReader());
 
-			return NoContent();
+			if (dt.Rows.Count == 0) return NotFound();
+			return Ok(ToList(dt).FirstOrDefault());
 		}
 
-		// DELETE: api/Accounts/5
-		[HttpDelete("{id}")]
-		public async Task<IActionResult> DeleteAccount(int id)
+		// ==========================================
+		// 4. LIST ALL ACCOUNTS (Existing)
+		// ==========================================
+		[HttpGet("all")]
+		[Authorize(Roles = "Officer,Manager,Admin")]
+		public IActionResult ListAllAccounts()
 		{
-			await _context.Database.ExecuteSqlRawAsync("EXEC dbo.usp_Account @Action = 'Delete', @AccountID = {0}", id);
-			return NoContent();
+			using var con = new SqlConnection(_conn);
+			using var cmd = new SqlCommand("usp_Account", con);
+			cmd.CommandType = CommandType.StoredProcedure;
+
+			cmd.Parameters.AddWithValue("@Action", "GetAll");
+
+			con.Open();
+			DataTable dt = new();
+			dt.Load(cmd.ExecuteReader());
+
+			return Ok(ToList(dt));
+		}
+
+		// ==========================================
+		// HELPERS (ToList, GetUserID, Audit)
+		// ==========================================
+
+		private List<Dictionary<string, object>> ToList(DataTable table)
+		{
+			var list = new List<Dictionary<string, object>>();
+			foreach (DataRow row in table.Rows)
+			{
+				var dict = new Dictionary<string, object>();
+				foreach (DataColumn col in table.Columns)
+				{
+					dict[col.ColumnName] = row[col];
+				}
+				list.Add(dict);
+			}
+			return list;
+		}
+
+		private int GetUserID()
+		{
+			var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+			return claim != null ? int.Parse(claim) : 0;
+		}
+
+		private void Audit(int UserID, string action, string oldVal, string newVal)
+		{
+			using var con = new SqlConnection(_conn);
+			using var cmd = new SqlCommand("usp_user_audit", con);
+			cmd.CommandType = CommandType.StoredProcedure;
+
+			cmd.Parameters.AddWithValue("@UserId", UserID);
+			cmd.Parameters.AddWithValue("@Action", action);
+			cmd.Parameters.AddWithValue("@OldValue", (object?)oldVal ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("@NewValue", (object?)newVal ?? DBNull.Value);
+
+			con.Open();
+			cmd.ExecuteNonQuery();
 		}
 	}
 }
