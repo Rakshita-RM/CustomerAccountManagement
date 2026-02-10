@@ -18,7 +18,7 @@ namespace CAM_WEB1.Models
 
         // Allowed: Pending | Approve | Reject
         [Required, StringLength(10)]
-        public string Decision { get; set; } = "Pending";
+        public string Decision { get; set; } 
 
         [StringLength(1024)]
         public string? Comments { get; set; }

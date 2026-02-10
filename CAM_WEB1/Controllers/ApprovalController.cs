@@ -1,150 +1,75 @@
-﻿using CAM_WEB1.Data;
-using CAM_WEB1.Models;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using CAM_WEB1.Data;
+using CAM_WEB1.Models;
 
 namespace CAM_WEB1.Controllers
 {
-    [Route("api/[controller]")]
     [ApiController]
-    public class ApprovalsController : ControllerBase
+    [Route("api/v1/approvals")]
+    [Authorize(Roles = "Manager")]   // ✅ ONLY MANAGER ACCESS
+    public class ApprovalController : ControllerBase
     {
-        private static readonly HashSet<string> AllowedDecisions =
-            new(StringComparer.OrdinalIgnoreCase) { "Pending", "Approve", "Reject" };
+        private readonly ApplicationDbContext _context;
 
-        private readonly ApplicationDbContext _approvalContext;
-        private readonly ApplicationDbContext _appContext; // for cross-entity validation
-
-        public ApprovalsController(ApplicationDbContext approvalContext, ApplicationDbContext appContext)
+        public ApprovalController(ApplicationDbContext context)
         {
-            _approvalContext = approvalContext;
-            _appContext = appContext;
+            _context = context;
         }
 
-        // POST: api/approvals
-        [HttpPost]
-        public async Task<ActionResult<Approval>> CreateApproval([FromBody] Approval approval)
-        {
-            if (approval == null) return BadRequest("Invalid payload.");
-
-            // Normalize & validate
-            approval.Decision = string.IsNullOrWhiteSpace(approval.Decision) ? "Pending" : approval.Decision.Trim();
-            if (!AllowedDecisions.Contains(approval.Decision))
-                return BadRequest("Decision must be one of: Pending, Approve, Reject.");
-
-            if (approval.ApprovalDate == default) approval.ApprovalDate = DateTime.UtcNow;
-
-            // Optional referential checks using your existing ApplicationDbContext
-            var txnExists = await _appContext.Transactions.AnyAsync(t => t.TransactionID == approval.TransactionID);
-            if (!txnExists) return NotFound($"Transaction {approval.TransactionID} not found.");
-
-            var reviewerExists = await _appContext.Users.AnyAsync(u => u.UserID == approval.ReviewerID);
-            if (!reviewerExists) return NotFound($"Reviewer (UserID={approval.ReviewerID}) not found.");
-
-            _approvalContext.Approvals.Add(approval);
-            await _approvalContext.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetApprovalById), new { id = approval.ApprovalID }, approval);
-        }
-
-        // GET: api/approvals
-        // Filters: transactionId, reviewerId, decision, from, to
+        // =========================
+        // GET ALL APPROVALS
+        // =========================
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Approval>>> GetApprovals(
-            [FromQuery] int? transactionId,
-            [FromQuery] int? reviewerId,
-            [FromQuery] string? decision,
-            [FromQuery(Name = "from")] DateTime? fromDate,
-            [FromQuery(Name = "to")] DateTime? toDate)
+        public IActionResult GetAll()
         {
-            var q = _approvalContext.Approvals.AsQueryable();
+            var approvals = _context.Approvals
+                                    .OrderByDescending(a => a.ApprovalDate)
+                                    .ToList();
 
-            if (transactionId.HasValue)
-                q = q.Where(a => a.TransactionID == transactionId.Value);
-
-            if (reviewerId.HasValue)
-                q = q.Where(a => a.ReviewerID == reviewerId.Value);
-
-            if (!string.IsNullOrWhiteSpace(decision))
-                q = q.Where(a => a.Decision == decision);
-
-            if (fromDate.HasValue)
-                q = q.Where(a => a.ApprovalDate >= fromDate.Value);
-
-            if (toDate.HasValue)
-                q = q.Where(a => a.ApprovalDate <= toDate.Value);
-
-            var items = await q.OrderByDescending(a => a.ApprovalDate).ToListAsync();
-            return Ok(items);
+            return Ok(approvals);
         }
 
-        // GET: api/approvals/{id}
-        [HttpGet("{id:int}")]
-        public async Task<ActionResult<Approval>> GetApprovalById(int id)
+        // =========================
+        // GET APPROVAL BY ID
+        // =========================
+        [HttpGet("{id}")]
+        public IActionResult GetById(int id)
         {
-            var approval = await _approvalContext.Approvals.FindAsync(id);
-            if (approval == null) return NotFound();
-            return approval;
+            var approval = _context.Approvals
+                                   .FirstOrDefault(a => a.ApprovalID == id);
+
+            if (approval == null)
+                return NotFound();
+
+            return Ok(approval);
         }
 
-        // PUT: api/approvals/{id}
-        [HttpPut("{id:int}")]
-        public async Task<IActionResult> UpdateApproval(int id, [FromBody] Approval approval)
+        // =========================
+        // APPROVE / REJECT (POST)
+        // =========================
+        [HttpPost("{id}/decision")]
+        public IActionResult SubmitDecision(
+            int id,
+            [FromBody] Approval request)
         {
-            if (id != approval.ApprovalID) return BadRequest("ID mismatch.");
-
-            // Validate decision
-            if (string.IsNullOrWhiteSpace(approval.Decision) || !AllowedDecisions.Contains(approval.Decision.Trim()))
-                return BadRequest("Decision must be one of: Pending, Approve, Reject.");
-
-            _approvalContext.Entry(approval).State = EntityState.Modified;
-
-            try
+            var parameters = new[]
             {
-                await _approvalContext.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                var exists = await _approvalContext.Approvals.AnyAsync(a => a.ApprovalID == id);
-                if (!exists) return NotFound();
-                throw;
-            }
+                new SqlParameter("@Action", "Update"),
+                new SqlParameter("@ApprovalId", id),
+                new SqlParameter("@ReviewerId", request.ReviewerID), // Manager
+                new SqlParameter("@Decision", request.Decision),
+                new SqlParameter("@Comments", request.Comments ?? "")
+            };
 
-            return NoContent();
-        }
+            _context.Database.ExecuteSqlRaw(
+                "EXEC usp_Approval @Action, @ApprovalId, NULL, @ReviewerId, @Decision, @Comments",
+                parameters
+            );
 
-        // PATCH: api/approvals/{id}/decision
-        [HttpPatch("{id:int}/decision")]
-        public async Task<IActionResult> ChangeDecision(int id, [FromBody] string newDecision)
-        {
-            if (string.IsNullOrWhiteSpace(newDecision))
-                return BadRequest("New decision is required.");
-
-            var decision = newDecision.Trim();
-            if (!AllowedDecisions.Contains(decision))
-                return BadRequest("Decision must be one of: Pending, Approve, Reject.");
-
-            var approval = await _approvalContext.Approvals.FindAsync(id);
-            if (approval == null) return NotFound();
-
-            approval.Decision = decision;
-            if (approval.ApprovalDate == default) approval.ApprovalDate = DateTime.UtcNow;
-
-            await _approvalContext.SaveChangesAsync();
-            return Ok(new { Message = $"Decision updated to {decision}" });
-        }
-
-        // DELETE: api/approvals/{id}
-        [HttpDelete("{id:int}")]
-        public async Task<IActionResult> DeleteApproval(int id)
-        {
-            var approval = await _approvalContext.Approvals.FindAsync(id);
-            if (approval == null) return NotFound();
-
-            _approvalContext.Approvals.Remove(approval);
-            await _approvalContext.SaveChangesAsync();
-
-            return NoContent();
+            return Ok("Decision submitted successfully");
         }
     }
 }
