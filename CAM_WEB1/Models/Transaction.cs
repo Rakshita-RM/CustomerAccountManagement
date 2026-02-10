@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace CAM_WEB1.Models
 {
-	[Table("t_Transactions")] // Following your 't_' coding standard
+	[Table("t_Transaction")] // Following your 't_' coding standard
 	public class Transaction
 	{
 		[Key]

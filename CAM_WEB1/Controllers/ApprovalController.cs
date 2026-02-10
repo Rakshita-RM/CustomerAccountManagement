@@ -1,9 +1,10 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using CAM_WEB1.Data;
+using CAM_WEB1.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using CAM_WEB1.Data;
-using CAM_WEB1.Models;
+using System.Data;
 
 namespace CAM_WEB1.Controllers
 {
@@ -12,10 +13,13 @@ namespace CAM_WEB1.Controllers
     [Authorize(Roles = "Manager")]   // ✅ ONLY MANAGER ACCESS
     public class ApprovalController : ControllerBase
     {
+        private readonly string _conn;
+
         private readonly ApplicationDbContext _context;
 
-        public ApprovalController(ApplicationDbContext context)
+        public ApprovalController(ApplicationDbContext context, IConfiguration configuration)
         {
+            _conn = configuration.GetConnectionString("DefaultConnection") ?? "";
             _context = context;
         }
 
@@ -68,8 +72,26 @@ namespace CAM_WEB1.Controllers
                 "EXEC usp_Approval @Action, @ApprovalId, NULL, @ReviewerId, @Decision, @Comments",
                 parameters
             );
+            
+
+            Audit(request.ReviewerID, request.Comments, null,request.Decision );
 
             return Ok("Decision submitted successfully");
+        }
+
+        private void Audit(int UserID, string action, string oldVal, string newVal)
+        {
+            using var con = new SqlConnection(_conn);
+            using var cmd = new SqlCommand("usp_user_audit", con);
+            cmd.CommandType = CommandType.StoredProcedure;
+
+            cmd.Parameters.AddWithValue("@UserID", UserID);
+            cmd.Parameters.AddWithValue("@Action", action);
+            cmd.Parameters.AddWithValue("@OldValue", (object?)oldVal ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@NewValue", (object?)newVal ?? DBNull.Value);
+
+            con.Open();
+            cmd.ExecuteNonQuery();
         }
     }
 }
