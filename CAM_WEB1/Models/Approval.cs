@@ -26,25 +26,5 @@ namespace CAM_WEB1.Models
         public DateTime ApprovalDate { get; set; } = DateTime.UtcNow;
     }
 
-    // Audit entity following your convention t_{Entity}_Audit
-    [Table("t_Approval_Audit")]
-    public class ApprovalAudit
-    {
-        [Key]
-        public int AuditID { get; set; }                // PK of audit row
-
-        public int ApprovalID { get; set; }
-        public int TransactionID { get; set; }
-        public int ReviewerID { get; set; }
-        public string? Decision { get; set; }
-        public string? Comments { get; set; }
-        public DateTime ApprovalDate { get; set; }
-
-        // Added | Modified | Deleted
-        [Required, StringLength(16)]
-        public string Action { get; set; } = "Added";
-
-        // UTC timestamp of the change
-        public DateTime ModifiedDate { get; set; } = DateTime.UtcNow;
-    }
+   
 }

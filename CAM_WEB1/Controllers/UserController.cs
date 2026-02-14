@@ -3,6 +3,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using BCrypt.Net;
+using CAM_WEB1.DTO;
 using CAM_WEB1.Model;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity.Data;
@@ -195,36 +196,50 @@ namespace CAM_WEB1.Controllers
 			return Ok("Logged out");
 		}
 
-		// =========================
-		// 4. CREATE USER (ADMIN)
-		// =========================
-		[HttpPost]
-		[Authorize(Roles = "Admin")]
-		public IActionResult Create(UserCreateRequest req)
-		{
-			using var con = new SqlConnection(_conn);
-			using var cmd = new SqlCommand("usp_user_crud", con);
-			cmd.CommandType = CommandType.StoredProcedure;
+        // =========================
+        // 4. CREATE USER (ADMIN)
+        // =========================
+        [HttpPost]
+        [Authorize(Roles = "Admin")]
+        public IActionResult Create(UserCreateRequest req)
+        {
+            using var con = new SqlConnection(_conn);
+            using var cmd = new SqlCommand("usp_user_crud", con);
+            cmd.CommandType = CommandType.StoredProcedure;
 
-			cmd.Parameters.AddWithValue("@Action", "CREATE");
-			cmd.Parameters.AddWithValue("@Name", req.Name);
-			cmd.Parameters.AddWithValue("@Email", req.Email);
-			cmd.Parameters.AddWithValue("@PasswordHash",
-				BCrypt.Net.BCrypt.HashPassword(req.Password));
-			cmd.Parameters.AddWithValue("@Role", req.Role);
-			cmd.Parameters.AddWithValue("@Branch", req.Branch);
+            cmd.Parameters.AddWithValue("@Action", "CREATE");
+            cmd.Parameters.AddWithValue("@Name", req.Name);
+            cmd.Parameters.AddWithValue("@Email", req.Email);
+            cmd.Parameters.AddWithValue("@PasswordHash",
+                BCrypt.Net.BCrypt.HashPassword(req.Password));
+            cmd.Parameters.AddWithValue("@Role", req.Role);
+            cmd.Parameters.AddWithValue("@Branch", req.Branch);
 
-			con.Open();
-			cmd.ExecuteNonQuery();
+            con.Open();
 
-			Audit(GetUserID(), "CREATE_USER", null, req.Email);
-			return Ok("User created");
-		}
+            var result = cmd.ExecuteScalar()?.ToString();
 
-		// =========================
-		// 5. GET USERS (FILTERED)
-		// =========================
-		[HttpGet]
+            if (result == "EMAIL_EXISTS")
+            {
+                return BadRequest(new
+                {
+                    message = "Email already exists"
+                });
+            }
+
+            Audit(GetUserID(), "CREATE_USER", null, req.Email);
+
+            return Ok(new
+            {
+                message = "User created successfully"
+            });
+        }
+
+
+        // =========================
+        // 5. GET USERS (FILTERED)
+        // =========================
+        [HttpGet]
 		[Authorize]
 		public IActionResult Get(
 			int? id,
