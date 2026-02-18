@@ -1,4 +1,4 @@
-﻿namespace CAM_WEB1.Model
+﻿namespace CAM_WEB1.DTO
 
 {
 
@@ -13,4 +13,4 @@
 	}
 
 }
-
+ 

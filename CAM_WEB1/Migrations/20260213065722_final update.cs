@@ -5,7 +5,7 @@
 namespace CAM_WEB1.Migrations
 {
     /// <inheritdoc />
-    public partial class getback : Migration
+    public partial class finalupdate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder) 

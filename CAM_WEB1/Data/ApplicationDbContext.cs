@@ -1,6 +1,8 @@
 ﻿using CAM_WEB1.Models;
-using CAM_WEB1.Model;
+
 using Microsoft.EntityFrameworkCore;
+
+using CAM_WEB1.DTO;
 
 namespace CAM_WEB1.Data
 {
@@ -14,12 +16,20 @@ namespace CAM_WEB1.Data
         public DbSet<Transaction> Transactions { get; set; } // Add this line
         public DbSet<Approval> Approvals { get; set; }
 
+        //public DbSet<RefreshTokenRequest> Refresh  { get; set; }
+
+        public DbSet<AuditLog> AuditLog { get; set; }
         public DbSet<Report> Reports { get; set; }
         public DbSet<ReportAudit> ReportAudits { get; set; }
+
+        
+
+
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
 
 
             modelBuilder.Entity<User>(entity =>
@@ -54,7 +64,7 @@ namespace CAM_WEB1.Data
                 {
                     a.Status,
                     a.CreatedDate
-                });
+                }); 
             });
 
 
@@ -85,21 +95,84 @@ namespace CAM_WEB1.Data
 
             });
 
+            // 1. Report Mapping
             modelBuilder.Entity<Report>(entity =>
             {
                 entity.ToTable("t_Report");
-                entity.HasKey(r => r.ReportId);
-                entity.Property(r => r.Scope).HasMaxLength(512).IsRequired();
-                entity.Property(r => r.Metrics).IsRequired();
+
+                entity.HasKey(r => r.ReportID);
+
+                entity.Property(r => r.Branch)
+                      .HasMaxLength(100)
+                      .IsRequired();
+
+                entity.Property(r => r.TotalTransactions)
+                      .IsRequired();
+
+                entity.Property(r => r.HighValueCount)
+                      .IsRequired();
+
+                entity.Property(r => r.AccountGrowthRate)
+                      .HasColumnType("decimal(18,2)");
+
+                entity.Property(r => r.GeneratedDate)
+                      .HasDefaultValueSql("GETUTCDATE()");
             });
 
+
             // --- Report mapping (correct as you have it) ---
+            // 2. Report Audit Mapping
             modelBuilder.Entity<ReportAudit>(entity =>
             {
-                entity.ToTable("t_Report_Audit");
+                entity.ToTable("t_Report_Audit"); // or t_Report_Audit
+
                 entity.HasKey(ra => ra.AuditID);
-                entity.Property(ra => ra.Action).IsRequired().HasMaxLength(50);
-                entity.Property(ra => ra.ActionDate).IsRequired();
+
+                entity.Property(ra => ra.ReportID)
+                      .IsRequired();
+
+                entity.Property(ra => ra.Action)
+                      .HasMaxLength(50)
+                      .IsRequired();
+
+                entity.Property(ra => ra.UserID)
+                      .IsRequired();
+
+                entity.Property(ra => ra.ActionDate)
+                      .HasDefaultValueSql("GETUTCDATE()");
+
+                // Optional FK relationship
+                entity.HasOne<Report>()
+                      .WithMany()
+                      .HasForeignKey(ra => ra.ReportID)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<AuditLog>(entity =>
+            {
+                entity.ToTable("t_user_audit");
+
+                entity.HasKey(e => e.AuditId);
+
+                entity.Property(e => e.AuditId)
+                      .HasColumnName("AuditId");
+
+                entity.Property(e => e.UserId)
+                      .HasColumnName("UserId");
+
+                entity.Property(e => e.Action)
+                      .HasMaxLength(50)
+                      .HasColumnType("nvarchar(50)");
+
+                entity.Property(e => e.OldValue)
+                      .HasColumnType("nvarchar(max)");
+
+                entity.Property(e => e.NewValue)
+                      .HasColumnType("nvarchar(max)");
+
+                entity.Property(e => e.PerformedDate)
+                      .HasColumnType("datetime")
+                      .IsRequired();
             });
         }
     }

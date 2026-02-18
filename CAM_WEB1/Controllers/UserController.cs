@@ -3,6 +3,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using BCrypt.Net;
+using CAM_WEB1.DTO;
 using CAM_WEB1.Model;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity.Data;
@@ -42,36 +43,66 @@ namespace CAM_WEB1.Controllers
 			return list;
 		}
 
-		// =========================
-		// 1. FIRST ADMIN (ONE TIME)
-		// =========================
-		[HttpPost("first-admin")]
-		[AllowAnonymous]
-		public IActionResult FirstAdmin(UserCreateRequest req)
-		{
-			using var con = new SqlConnection(_conn);
-			using var cmd = new SqlCommand("usp_user_crud", con);
-			cmd.CommandType = CommandType.StoredProcedure;
+        // =========================
+        // 1. FIRST ADMIN (ONE TIME)
+        // =========================
+        [HttpPost("first-admin")]
+        [AllowAnonymous]
+        public IActionResult FirstAdmin(UserCreateRequest req)
+        {
+            try
+            {
+                using var con = new SqlConnection(_conn);
+                using var checkCmd = new SqlCommand(
+                    "SELECT COUNT(*) FROM t_User WHERE Role = 'ADMIN'", con);
 
-			cmd.Parameters.AddWithValue("@Action", "FIRST_ADMIN");
-			cmd.Parameters.AddWithValue("@Name", req.Name);
-			cmd.Parameters.AddWithValue("@Email", req.Email);
-			cmd.Parameters.AddWithValue("@PasswordHash",
-				BCrypt.Net.BCrypt.HashPassword(req.Password));
-			cmd.Parameters.AddWithValue("@Branch", req.Branch);
+                con.Open();
 
-			cmd.Parameters.AddWithValue("@Status", "Active");
-			con.Open();
-			cmd.ExecuteNonQuery();
+                int adminCount = (int)checkCmd.ExecuteScalar();
 
-			return Ok("First Admin created (if not exists)");
-		}
+                if (adminCount > 0)
+                {
+                    return Conflict(new
+                    {
+                        message = "First admin already exists"
+                    });
+                }
+
+                // If not exists → Create admin
+                using var cmd = new SqlCommand("usp_user_crud", con);
+                cmd.CommandType = CommandType.StoredProcedure;
+
+                cmd.Parameters.AddWithValue("@Action", "FIRST_ADMIN");
+                cmd.Parameters.AddWithValue("@Name", req.Name);
+                cmd.Parameters.AddWithValue("@Email", req.Email);
+                cmd.Parameters.AddWithValue("@PasswordHash",
+                    BCrypt.Net.BCrypt.HashPassword(req.Password));
+                cmd.Parameters.AddWithValue("@Branch", req.Branch);
+                cmd.Parameters.AddWithValue("@Status", "Active");
+
+                cmd.ExecuteNonQuery();
+
+                return Ok(new
+                {
+                    message = "First admin created successfully"
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "Internal server error",
+                    error = ex.Message
+                });
+            }
+        }
 
 
 
-		//GET CURRENT USER PROFILE
 
-		[HttpGet("me")]
+        //GET CURRENT USER PROFILE
+
+        [HttpGet("me")]
 		[Authorize(Roles = "Officer,Manager,Admin")] // Use "Officer" here to match normalized JWT
 		public IActionResult GetProfile()
 		{
@@ -165,36 +196,50 @@ namespace CAM_WEB1.Controllers
 			return Ok("Logged out");
 		}
 
-		// =========================
-		// 4. CREATE USER (ADMIN)
-		// =========================
-		[HttpPost]
-		[Authorize(Roles = "Admin")]
-		public IActionResult Create(UserCreateRequest req)
-		{
-			using var con = new SqlConnection(_conn);
-			using var cmd = new SqlCommand("usp_user_crud", con);
-			cmd.CommandType = CommandType.StoredProcedure;
+        // =========================
+        // 4. CREATE USER (ADMIN)
+        // =========================
+        [HttpPost]
+        [Authorize(Roles = "Admin")]
+        public IActionResult Create(UserCreateRequest req)
+        {
+            using var con = new SqlConnection(_conn);
+            using var cmd = new SqlCommand("usp_user_crud", con);
+            cmd.CommandType = CommandType.StoredProcedure;
 
-			cmd.Parameters.AddWithValue("@Action", "CREATE");
-			cmd.Parameters.AddWithValue("@Name", req.Name);
-			cmd.Parameters.AddWithValue("@Email", req.Email);
-			cmd.Parameters.AddWithValue("@PasswordHash",
-				BCrypt.Net.BCrypt.HashPassword(req.Password));
-			cmd.Parameters.AddWithValue("@Role", req.Role);
-			cmd.Parameters.AddWithValue("@Branch", req.Branch);
+            cmd.Parameters.AddWithValue("@Action", "CREATE");
+            cmd.Parameters.AddWithValue("@Name", req.Name);
+            cmd.Parameters.AddWithValue("@Email", req.Email);
+            cmd.Parameters.AddWithValue("@PasswordHash",
+                BCrypt.Net.BCrypt.HashPassword(req.Password));
+            cmd.Parameters.AddWithValue("@Role", req.Role);
+            cmd.Parameters.AddWithValue("@Branch", req.Branch);
 
-			con.Open();
-			cmd.ExecuteNonQuery();
+            con.Open();
 
-			Audit(GetUserID(), "CREATE_USER", null, req.Email);
-			return Ok("User created");
-		}
+            var result = cmd.ExecuteScalar()?.ToString();
 
-		// =========================
-		// 5. GET USERS (FILTERED)
-		// =========================
-		[HttpGet]
+            if (result == "EMAIL_EXISTS")
+            {
+                return BadRequest(new
+                {
+                    message = "Email already exists"
+                });
+            }
+
+            Audit(GetUserID(), "CREATE_USER", null, req.Email);
+
+            return Ok(new
+            {
+                message = "User created successfully"
+            });
+        }
+
+
+        // =========================
+        // 5. GET USERS (FILTERED)
+        // =========================
+        [HttpGet]
 		[Authorize]
 		public IActionResult Get(
 			int? id,
@@ -353,5 +398,5 @@ namespace CAM_WEB1.Controllers
 			con.Open();
 			cmd.ExecuteNonQuery();
 		}
-	}
+	} 
 }

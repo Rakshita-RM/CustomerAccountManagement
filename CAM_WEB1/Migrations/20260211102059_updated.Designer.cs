@@ -4,6 +4,7 @@ using CAM_WEB1.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CAM_WEB1.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
-    { 
-        protected override void BuildModel(ModelBuilder modelBuilder)
+    [Migration("20260211102059_updated")]
+    partial class updated 
+    {
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -86,7 +89,8 @@ namespace CAM_WEB1.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
 
-                    b.Property<int>("ReviewerID")
+                    b.Property<int?>("ReviewerID")
+                        .IsRequired()
                         .HasColumnType("int");
 
                     b.Property<int>("TransactionID")

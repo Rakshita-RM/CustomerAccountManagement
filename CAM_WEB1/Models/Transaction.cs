@@ -13,8 +13,10 @@ namespace CAM_WEB1.Models
 
 		[Required]
 		public int AccountID { get; set; }
+		 
+		public int? ToAccountID { get; set; } // Nullable for non-transfer transactions
 
-		[Required]
+        [Required]
 		public string Type { get; set; } = string.Empty; // Deposit, Withdrawal, or Transfer [cite: 63]
 
 		[Column(TypeName = "decimal(18,2)")]

@@ -5,26 +5,24 @@
 namespace CAM_WEB1.Migrations
 {
     /// <inheritdoc />
-    public partial class FinalAccountFix : Migration 
+    public partial class updated : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "Branch",
-                table: "t_Account",
-                type: "nvarchar(100)",
-                maxLength: 100,
-                nullable: false,
-                defaultValue: "");
-        }
+            migrationBuilder.AddColumn<int>(
+                name: "ToAccountID", 
+                table: "t_Transaction",
+                type: "int",
+                nullable: true);
+        } 
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
-                name: "Branch",
-                table: "t_Account");
+                name: "ToAccountID",
+                table: "t_Transaction");
         }
     }
 }
