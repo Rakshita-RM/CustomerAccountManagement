@@ -13,7 +13,7 @@ namespace CAM_WEB1.Models
 
 		[Required]
 		public int AccountID { get; set; }
-
+		 
 		public int? ToAccountID { get; set; } // Nullable for non-transfer transactions
 
         [Required]

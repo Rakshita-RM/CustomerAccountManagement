@@ -10,7 +10,7 @@ namespace CAM_WEB1.Models
         [Key]
         public int ApprovalID { get; set; }             // PK
 
-        [Required]
+        [Required] 
         public int TransactionID { get; set; }          // FK -> Transaction.TransactionID
         [Required]
         public int ReviewerID { get; set; }             // FK -> User.UserID

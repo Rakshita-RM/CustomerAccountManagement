@@ -5,7 +5,7 @@
 namespace CAM_WEB1.Migrations
 {
     /// <inheritdoc />
-    public partial class FinalAccountFix : Migration
+    public partial class FinalAccountFix : Migration 
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

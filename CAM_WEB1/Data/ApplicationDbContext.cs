@@ -64,7 +64,7 @@ namespace CAM_WEB1.Data
                 {
                     a.Status,
                     a.CreatedDate
-                });
+                }); 
             });
 
 

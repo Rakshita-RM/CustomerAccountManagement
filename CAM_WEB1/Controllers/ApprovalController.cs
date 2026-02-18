@@ -106,7 +106,7 @@ namespace CAM_WEB1.Controllers
                     new SqlParameter("@ApprovalId", id),
                     new SqlParameter("@ReviewerId", reviewerId),
                     new SqlParameter("@Decision", request.Decision),
-                    new SqlParameter("@Comments", request.Comments ?? "")
+                    new SqlParameter("@Comments", request.Comments ?? "") 
                 };
 
                 await _context.Database.ExecuteSqlRawAsync(

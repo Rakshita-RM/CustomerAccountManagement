@@ -15,7 +15,7 @@
 		public string Role { get; set; }
 
 		public string Branch { get; set; }
-
+		 
 	}
 
 }

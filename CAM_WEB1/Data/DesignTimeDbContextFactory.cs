@@ -18,7 +18,7 @@ namespace CAM_WEB1.Data
                 .AddJsonFile($"appsettings.{env}.json", optional: true, reloadOnChange: false)
                 .AddEnvironmentVariables()
                 .Build();
-
+             
             var conn = config.GetConnectionString("DefaultConnection")
                        ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 

@@ -11,11 +11,11 @@ namespace CAM_WEB1.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<int>(
-                name: "ToAccountID",
+                name: "ToAccountID", 
                 table: "t_Transaction",
                 type: "int",
                 nullable: true);
-        }
+        } 
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)

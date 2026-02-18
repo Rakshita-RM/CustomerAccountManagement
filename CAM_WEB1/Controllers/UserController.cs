@@ -398,5 +398,5 @@ namespace CAM_WEB1.Controllers
 			con.Open();
 			cmd.ExecuteNonQuery();
 		}
-	}
+	} 
 }

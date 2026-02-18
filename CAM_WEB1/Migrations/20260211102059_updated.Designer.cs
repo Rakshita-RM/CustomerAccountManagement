@@ -13,7 +13,7 @@ namespace CAM_WEB1.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
     [Migration("20260211102059_updated")]
-    partial class updated
+    partial class updated 
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

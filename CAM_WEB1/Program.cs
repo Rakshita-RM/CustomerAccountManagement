@@ -20,7 +20,7 @@ builder.Services.AddControllers();
 // JWT Authentication
 
 // --------------------
-
+ 
 var jwtSettings = builder.Configuration.GetSection("Jwt");
 
 var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]);

@@ -12,7 +12,7 @@ namespace CAM_WEB1.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "t_Account",
+                name: "t_Account", 
                 columns: table => new
                 {
                     AccountID = table.Column<int>(type: "int", nullable: false)
